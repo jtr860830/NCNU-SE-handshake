@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import Session
 
 from app.database import get_session
@@ -9,6 +10,7 @@ from app.crud.user import (
     get_user_by_username,
 )
 from app.security import create_access_token
+from app.models.user import User
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -37,20 +39,49 @@ def register_user(
 # Login
 # ------------------------------------------------------
 @router.post("/login")
-def login(
-    data: UserLogin,
+def login_form(
+    form_data: OAuth2PasswordRequestForm = Depends(),
     session: Session = Depends(get_session),
 ):
-    user = authenticate_user(session, data.username, data.password)
+    user: User | None = authenticate_user(
+        session,
+        form_data.username,
+        form_data.password,
+    )
 
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     token = create_access_token({"sub": user.username})
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+    }
 
+
+@router.post("/login/json")
+def login_json(
+    data: UserLogin,
+    session: Session = Depends(get_session),
+):
+    user: User | None = authenticate_user(
+        session,
+        data.username,
+        data.password,
+    )
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = create_access_token({"sub": user.username})
     return {
         "access_token": token,
         "token_type": "bearer",

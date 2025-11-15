@@ -1,10 +1,11 @@
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session
 
 from app.database import get_session
 from app.deps import get_current_user
 from app.models.user import User, UserRole
-from app.models.project import Project
+from app.models.project import Project, ProjectStatus
 from app.schemas.project import (
     ProjectCreate,
     ProjectUpdate,
@@ -89,24 +90,39 @@ def update_project_route(
     return updated
 
 
-@router.post("/{project_id}/assign", response_model=ProjectRead)
-def assign_worker_route(
+@router.patch("/{project_id}/assign")
+def assign_project(
     project_id: int,
-    current_user: User = Depends(get_current_user),
+    worker_id: int,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
-    if current_user.role != UserRole.WORKER:
-        raise HTTPException(403, "Only workers can accept projects")
+    # 只能由 Client 指派 Worker
+    if current_user.role != UserRole.CLIENT:
+        raise HTTPException(status_code=403, detail="Only clients can assign projects")
 
-    project = get_project(session, project_id)
+    project = session.get(Project, project_id)
     if not project:
-        raise HTTPException(404, "Project not found")
+        raise HTTPException(status_code=404, detail="Project not found")
 
-    if project.worker_id is not None:
-        raise HTTPException(400, "Project already assigned")
+    # 只有這個 client 本人才能 assign 自己的 project
+    if project.client_id != current_user.id:
+        raise HTTPException(status_code=403, detail="This is not your project")
 
-    assigned = assign_worker(session, project, current_user.id)
-    return assigned
+    # worker_id 必須要是存在的 user 而且角色是 WORKER
+    worker = session.get(User, worker_id)
+    if not worker or worker.role != UserRole.WORKER:
+        raise HTTPException(status_code=400, detail="Invalid worker id")
+
+    project.worker_id = worker_id
+    project.status = ProjectStatus.IN_PROGRESS
+    project.update_at = datetime.now(timezone.utc)
+
+    session.add(project)
+    session.commit()
+    session.refresh(project)
+
+    return {"message": "Project assigned successfully", "project": project}
 
 
 @router.post("/{project_id}/complete", response_model=ProjectRead)

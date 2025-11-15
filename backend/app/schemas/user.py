@@ -23,8 +23,8 @@ class UserLogin(SQLModel):
 
 class UserRead(UserBase):
     id: int
-    created_at: datetime
-    updated_at: datetime
+    create_at: datetime
+    update_at: datetime
 
 
 class UserUpdate(SQLModel):

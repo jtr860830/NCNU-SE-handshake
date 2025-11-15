@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlmodel import Session
 
 from app.database import get_session
@@ -10,6 +11,7 @@ from app.models.user import User, UserRole
 from app.schemas.deliverable import DeliverableCreate, DeliverableRead
 from app.crud.deliverable import create_deliverable, list_deliverables_by_project
 from app.crud.project import get_project
+from app.models.deliverable import Deliverable
 
 
 router = APIRouter(prefix="/deliverables", tags=["deliverables"])
@@ -109,3 +111,34 @@ async def upload_deliverable_file(
     )
 
     return deliverable
+
+
+@router.get(
+    "/{deliverable_id}/download",
+    response_class=FileResponse,
+)
+def download_deliverable_file(
+    deliverable_id: int,
+    session: Session = Depends(get_session),
+):
+    deliverable = session.get(Deliverable, deliverable_id)
+    if not deliverable:
+        raise HTTPException(404, "Deliverable not found")
+
+    project = get_project(session, deliverable.project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    file_path = deliverable.file_url
+
+    if not os.path.exists(file_path):
+        raise HTTPException(404, "File not found on server")
+
+    # 用原本檔名當下載名稱會比較友善
+    download_name = os.path.basename(file_path)
+
+    return FileResponse(
+        path=file_path,
+        filename=download_name,
+        media_type="application/octet-stream",
+    )
